@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Feedback System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 0;
+            min-height: 70vh;
+        }
+
+        .conversation-panel {
+            padding: 30px;
+            border-right: 1px solid #eee;
+        }
+
+        .control-panel {
+            padding: 30px;
+            background: #f8f9fa;
+        }
+
+        .status-bar {
+            background: #28a745;
+            color: white;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .status-bar.error {
+            background: #dc3545;
+        }
+
+        .status-bar.warning {
+            background: #ffc107;
+            color: #212529;
+        }
+
+        .conversation {
+            height: 500px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 20px;
+            background: #fafafa;
+            margin-bottom: 20px;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+
+        .message.user {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            margin-left: auto;
+            margin-right: 0;
+        }
+
+        .message.assistant {
+            background: #f3e5f5;
+            border-left: 4px solid #9c27b0;
+            margin-right: auto;
+            margin-left: 0;
+        }
+
+        .message-header {
+            font-size: 0.8em;
+            color: #666;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        .message-text {
+            line-height: 1.5;
+        }
+
+        .controls {
+            display: grid;
+            gap: 15px;
+        }
+
+        .control-group {
+            margin-bottom: 25px;
+        }
+
+        .control-group h3 {
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 1.1em;
+        }
+
+        .button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .button.primary {
+            background: #28a745;
+            color: white;
+        }
+
+        .button.primary:hover {
+            background: #218838;
+            transform: translateY(-2px);
+        }
+
+        .button.danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .button.danger:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+        }
+
+        .button.secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .button.secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .textarea {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 120px;
+            transition: border-color 0.3s ease;
+        }
+
+        .textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .recording-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background: #dc3545;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .listening-status {
+            text-align: center;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            border: 2px dashed #ddd;
+            color: #666;
+        }
+
+        .listening-status.active {
+            border-color: #28a745;
+            color: #28a745;
+            background: #f8fff8;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .container {
+                margin: 10px;
+            }
+            
+            .conversation {
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎤 Live Feedback System</h1>
+            <p>Real-time AI-powered conversation assistance</p>
+        </div>
+        
+        <div class="main-content">
+            <div class="conversation-panel">
+                <div id="status" class="status-bar">Connecting...</div>
+                
+                <div class="listening-status" id="listeningStatus">
+                    <p>🎤 Click "Start Listening" to begin</p>
+                </div>
+                
+                <div class="conversation" id="conversation">
+                    <div style="text-align: center; color: #999; padding: 40px;">
+                        <p>Conversation will appear here...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="control-panel">
+                <div class="controls">
+                    <div class="control-group">
+                        <h3>🎯 System Prompt</h3>
+                        <textarea 
+                            id="systemPrompt" 
+                            class="textarea" 
+                            placeholder="Enter your system prompt here..."
+                        >You are a live sales-call agent that listens to a person and gives them recommendations on what to say or does research and returns results. Your human "companion" is trying to address the needs and create value by creating AI-centric products for businesses.</textarea>
+                        <button id="updatePrompt" class="button secondary" style="margin-top: 10px; width: 100%;">
+                            Update Prompt
+                        </button>
+                    </div>
+                    
+                    <div class="control-group">
+                        <h3>🎤 Audio Controls</h3>
+                        <button id="startListening" class="button primary" style="width: 100%; margin-bottom: 10px;">
+                            Start Listening
+                        </button>
+                        <button id="stopListening" class="button danger" style="width: 100%; margin-bottom: 15px;" disabled>
+                            Stop Listening
+                        </button>
+                        
+                        <div style="margin-bottom: 10px;">
+                            <label for="silenceThreshold" style="display: block; margin-bottom: 5px; font-size: 0.9em; color: #666;">
+                                Pause Detection (seconds): <span id="thresholdValue">3.0</span>
+                            </label>
+                            <input type="range" id="silenceThreshold" min="1" max="6" step="0.5" value="3" 
+                                   style="width: 100%;" onchange="updateThreshold(this.value)">
+                            <div style="font-size: 0.8em; color: #888; margin-top: 2px;">
+                                Lower = faster response, Higher = waits for complete thoughts
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <h3>🗑️ Conversation</h3>
+                        <button id="clearConversation" class="button secondary" style="width: 100%;">
+                            Clear Conversation
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Socket.IO connection
+        const socket = io();
+        
+        // DOM elements
+        const statusEl = document.getElementById('status');
+        const conversationEl = document.getElementById('conversation');
+        const listeningStatusEl = document.getElementById('listeningStatus');
+        const startBtn = document.getElementById('startListening');
+        const stopBtn = document.getElementById('stopListening');
+        const clearBtn = document.getElementById('clearConversation');
+        const updatePromptBtn = document.getElementById('updatePrompt');
+        const systemPromptEl = document.getElementById('systemPrompt');
+        
+        let isListening = false;
+        let partialSpeechEl = null;
+        let partialSpeechBuffer = [];
+        
+        // Socket event handlers
+        socket.on('connect', function() {
+            setStatus('Connected to Live Feedback System', 'success');
+        });
+        
+        socket.on('disconnect', function() {
+            setStatus('Disconnected from server', 'error');
+        });
+        
+        socket.on('status', function(data) {
+            setStatus(data.message, 'success');
+        });
+        
+        socket.on('error', function(data) {
+            setStatus(data.message, 'error');
+        });
+        
+        socket.on('speech_partial', function(data) {
+            updatePartialSpeech(data.text, data.timestamp);
+        });
+        
+        socket.on('speech_recognized', function(data) {
+            finalizePartialSpeech();
+            addMessage('user', data.text, data.timestamp);
+        });
+        
+        socket.on('ai_recommendation', function(data) {
+            addMessage('assistant', data.text, data.timestamp);
+        });
+        
+        // Button event handlers
+        startBtn.addEventListener('click', function() {
+            if (!isListening) {
+                socket.emit('start_listening');
+                isListening = true;
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                
+                listeningStatusEl.className = 'listening-status active';
+                listeningStatusEl.innerHTML = '<span class="recording-indicator"></span>🎤 Listening... Speak now!';
+            }
+        });
+        
+        stopBtn.addEventListener('click', function() {
+            if (isListening) {
+                socket.emit('stop_listening');
+                isListening = false;
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                
+                listeningStatusEl.className = 'listening-status';
+                listeningStatusEl.innerHTML = '<p>🎤 Click "Start Listening" to begin</p>';
+            }
+        });
+        
+        clearBtn.addEventListener('click', function() {
+            socket.emit('clear_conversation');
+            conversationEl.innerHTML = '<div style="text-align: center; color: #999; padding: 40px;"><p>Conversation will appear here...</p></div>';
+            // Clear any partial speech
+            finalizePartialSpeech();
+        });
+        
+        updatePromptBtn.addEventListener('click', function() {
+            const prompt = systemPromptEl.value.trim();
+            if (prompt) {
+                socket.emit('set_system_prompt', { prompt: prompt });
+            }
+        });
+        
+        // Threshold update function
+        function updateThreshold(value) {
+            document.getElementById('thresholdValue').textContent = parseFloat(value).toFixed(1);
+            socket.emit('set_silence_threshold', { threshold: parseFloat(value) });
+        }
+        
+        // Helper functions
+        function setStatus(message, type = 'success') {
+            statusEl.textContent = message;
+            statusEl.className = `status-bar ${type}`;
+        }
+        
+        function addMessage(type, text, timestamp) {
+            // Clear the placeholder if it's the first message
+            if (conversationEl.children.length === 1 && conversationEl.children[0].style.textAlign === 'center') {
+                conversationEl.innerHTML = '';
+            }
+            
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${type}`;
+            
+            const headerEl = document.createElement('div');
+            headerEl.className = 'message-header';
+            headerEl.textContent = `${type === 'user' ? 'You' : 'AI Assistant'} - ${timestamp}`;
+            
+            const textEl = document.createElement('div');
+            textEl.className = 'message-text';
+            textEl.textContent = text;
+            
+            messageEl.appendChild(headerEl);
+            messageEl.appendChild(textEl);
+            conversationEl.appendChild(messageEl);
+            
+            // Auto-scroll to bottom
+            conversationEl.scrollTop = conversationEl.scrollHeight;
+        }
+        
+        // Request conversation history on load
+        socket.on('conversation_history', function(data) {
+            conversationEl.innerHTML = '';
+            data.history.forEach(msg => {
+                addMessage(msg.type, msg.text, msg.timestamp);
+            });
+        });
+        
+        // Get conversation history when connected
+        socket.emit('get_conversation_history');
+        
+        // Partial speech handling functions
+        function updatePartialSpeech(text, timestamp) {
+            partialSpeechBuffer.push(text);
+            
+            if (!partialSpeechEl) {
+                // Create partial speech element
+                partialSpeechEl = document.createElement('div');
+                partialSpeechEl.className = 'message user partial';
+                partialSpeechEl.style.opacity = '0.7';
+                partialSpeechEl.style.fontStyle = 'italic';
+                partialSpeechEl.style.border = '2px dashed #2196f3';
+                
+                const headerEl = document.createElement('div');
+                headerEl.className = 'message-header';
+                headerEl.textContent = `You (speaking...) - ${timestamp}`;
+                
+                const textEl = document.createElement('div');
+                textEl.className = 'message-text';
+                textEl.id = 'partial-text';
+                
+                partialSpeechEl.appendChild(headerEl);
+                partialSpeechEl.appendChild(textEl);
+                
+                // Clear placeholder if it's the first message
+                if (conversationEl.children.length === 1 && conversationEl.children[0].style.textAlign === 'center') {
+                    conversationEl.innerHTML = '';
+                }
+                
+                conversationEl.appendChild(partialSpeechEl);
+            }
+            
+            // Update the partial text
+            const textEl = partialSpeechEl.querySelector('#partial-text');
+            textEl.textContent = partialSpeechBuffer.join(' ');
+            
+            // Auto-scroll to bottom
+            conversationEl.scrollTop = conversationEl.scrollHeight;
+        }
+        
+        function finalizePartialSpeech() {
+            if (partialSpeechEl) {
+                partialSpeechEl.remove();
+                partialSpeechEl = null;
+                partialSpeechBuffer = [];
+            }
+        }
+    </script>
+</body>
+</html> 
