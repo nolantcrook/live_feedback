@@ -37,7 +37,7 @@ class LiveFeedbackSystem:
         self.silence_threshold = 3  # seconds of silence before processing
         self.speech_buffer = []  # Buffer to collect speech segments
         self.processing_timer = None
-        self.min_speech_length = 1.5  # minimum seconds of speech before considering it valid
+        self.min_speech_length = 0.5  # minimum seconds of speech before considering it valid
         
     def adjust_for_ambient_noise(self):
         """Adjust for ambient noise once at startup"""
@@ -82,6 +82,8 @@ class LiveFeedbackSystem:
             if text.strip():
                 self.last_speech_time = time.time()
                 
+                print(f"Received speech: '{text}' - buffering...")
+                
                 # Add to speech buffer
                 self.speech_buffer.append({
                     'text': text,
@@ -98,6 +100,9 @@ class LiveFeedbackSystem:
                 # Cancel previous timer if exists
                 if self.processing_timer:
                     self.processing_timer.cancel()
+                    print(f"Cancelled previous timer, starting new {self.silence_threshold}s timer...")
+                else:
+                    print(f"Starting {self.silence_threshold}s timer...")
                 
                 # Start new timer to process after silence threshold
                 self.processing_timer = threading.Timer(
@@ -116,39 +121,47 @@ class LiveFeedbackSystem:
     
     def process_buffered_speech(self):
         """Process the buffered speech segments as a complete thought"""
-        if not self.speech_buffer:
-            return
+        try:
+            if not self.speech_buffer:
+                return
+                
+            # Check if we have enough speech duration
+            total_duration = self.speech_buffer[-1]['timestamp'] - self.speech_buffer[0]['timestamp']
+            if total_duration < self.min_speech_length and len(self.speech_buffer) == 1:
+                # Too short, might be just a quick word
+                print(f"Speech too short: {total_duration:.2f}s, skipping...")
+                self.speech_buffer.clear()
+                return
             
-        # Check if we have enough speech duration
-        total_duration = self.speech_buffer[-1]['timestamp'] - self.speech_buffer[0]['timestamp']
-        if total_duration < self.min_speech_length and len(self.speech_buffer) == 1:
-            # Too short, might be just a quick word
+            # Combine all buffered speech segments
+            combined_text = ' '.join([segment['text'] for segment in self.speech_buffer])
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            
+            print(f"Processing complete speech: '{combined_text}' ({len(self.speech_buffer)} segments)")
+            
+            # Add to conversation history
+            conversation_history.append({
+                'type': 'user',
+                'text': combined_text,
+                'timestamp': timestamp
+            })
+            
+            # Emit the final recognized text
+            socketio.emit('speech_recognized', {
+                'text': combined_text,
+                'timestamp': timestamp
+            })
+            
+            # Get AI recommendation
+            self.get_ai_recommendation(combined_text)
+            
+            # Clear the buffer
             self.speech_buffer.clear()
-            return
-        
-        # Combine all buffered speech segments
-        combined_text = ' '.join([segment['text'] for segment in self.speech_buffer])
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        
-        # Add to conversation history
-        conversation_history.append({
-            'type': 'user',
-            'text': combined_text,
-            'timestamp': timestamp
-        })
-        
-        # Emit the final recognized text
-        socketio.emit('speech_recognized', {
-            'text': combined_text,
-            'timestamp': timestamp
-        })
-        
-        # Get AI recommendation
-        self.get_ai_recommendation(combined_text)
-        
-        # Clear the buffer
-        self.speech_buffer.clear()
-        self.processing_timer = None
+            self.processing_timer = None
+            
+        except Exception as e:
+            print(f"Error in process_buffered_speech: {e}")
+            socketio.emit('error', {'message': f'Error processing speech: {str(e)}'})
     
     def get_ai_recommendation(self, latest_text):
         """Get recommendation from OpenAI API"""
@@ -272,6 +285,15 @@ def handle_clear_conversation():
 @socketio.on('get_conversation_history')
 def handle_get_conversation_history():
     emit('conversation_history', {'history': conversation_history})
+
+@socketio.on('force_process_speech')
+def handle_force_process_speech():
+    if feedback_system.speech_buffer:
+        print("Manual processing triggered")
+        feedback_system.process_buffered_speech()
+        emit('status', {'message': 'Processed buffered speech'})
+    else:
+        emit('status', {'message': 'No speech to process'})
 
 if __name__ == '__main__':
     # Check if OpenAI API key is available

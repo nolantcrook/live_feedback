@@ -295,8 +295,11 @@
                         <button id="startListening" class="button primary" style="width: 100%; margin-bottom: 10px;">
                             Start Listening
                         </button>
-                        <button id="stopListening" class="button danger" style="width: 100%; margin-bottom: 15px;" disabled>
+                        <button id="stopListening" class="button danger" style="width: 100%; margin-bottom: 10px;" disabled>
                             Stop Listening
+                        </button>
+                        <button id="forceProcess" class="button secondary" style="width: 100%; margin-bottom: 15px; font-size: 0.9em;">
+                            Process Speech Now
                         </button>
                         
                         <div style="margin-bottom: 10px;">
@@ -332,6 +335,7 @@
         const listeningStatusEl = document.getElementById('listeningStatus');
         const startBtn = document.getElementById('startListening');
         const stopBtn = document.getElementById('stopListening');
+        const forceProcessBtn = document.getElementById('forceProcess');
         const clearBtn = document.getElementById('clearConversation');
         const updatePromptBtn = document.getElementById('updatePrompt');
         const systemPromptEl = document.getElementById('systemPrompt');
@@ -393,6 +397,10 @@
                 listeningStatusEl.className = 'listening-status';
                 listeningStatusEl.innerHTML = '<p>🎤 Click "Start Listening" to begin</p>';
             }
+        });
+        
+        forceProcessBtn.addEventListener('click', function() {
+            socket.emit('force_process_speech');
         });
         
         clearBtn.addEventListener('click', function() {
